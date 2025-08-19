@@ -1,48 +1,50 @@
 // server.js
 
+// 引入所需模块
 const express = require('express');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const path = require('path');
-// --- 1. 引入我们刚刚安装的代理工具 ---
-const { HttpsProxyAgent } = require("https-proxy-agent"); 
 
+// 初始化Express应用
 const app = express();
-app.use(express.json());
+app.use(express.json()); // 解析JSON请求体
+app.use(express.static(__dirname)); // 托管前端静态文件 (如 index.html)
 
-// --- 托管前端文件 (这部分不变) ---
-app.use(express.static(__dirname)); 
+// --- 配置与AI初始化 ---
 
-// --- 2. 在这里定义你的代理服务器地址 ---
-// !!! 你需要将这个地址换成你自己的代理服务器地址和端口号
-const PROXY_URL = "https://132.232.133.234/link/lZQl96snH5LxMGGo7trbyw6LDhcS2tpL?config=all"; 
+// 1. 从环境变量中安全地读取API密钥
+const API_KEY = process.env.GOOGLE_AI_API_KEY;
 
-// --- 初始化AI模型 ---
-const API_KEY = 'YOUR_API_KEY'; 
+// 如果在服务器环境中找不到API密钥，打印错误并退出，防止应用崩溃
+if (!API_KEY) {
+    console.error("错误：找不到 GOOGLE_AI_API_KEY 环境变量。请确保您已在部署平台（如Render）上正确设置了它。");
+    process.exit(1); // 退出程序
+}
 
-// --- 3. 修改AI客户端的初始化设置，让它使用代理 ---
-const agent = new HttpsProxyAgent(PROXY_URL);
-const genAI = new GoogleGenerativeAI(API_KEY, { 
-    fetch: (url, opts) => fetch(url, { ...opts, agent }) 
-});
-
+const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash"});
 
-// --- 语言生成器 (与之前相同) ---
+// --- 语言规则生成器 ---
+// 在服务器启动时为本次会话生成一套独一无二的规则
 function generateLanguageRules() {
     const rules = [
         { noun_class: "[人造物 an-o] vs [自然物 an-a]", verb_class: "[意图 ro-] vs [意外 ta-]" },
-        { noun_class: "[有生命的 il-] vs [无生命的 um-]", verb_class: "[完成 a-] vs [未完成 o-]" }
+        { noun_class: "[有生命的 il-] vs [无生命的 um-]", verb_class: "[完成 a-] vs [未完成 o-]" },
+        { noun_class: "[坚硬的 -ik] vs [流动的 -ul]", verb_class: "[创造 e-] vs [毁灭 o-]" }
     ];
     return rules[Math.floor(Math.random() * rules.length)];
 }
 
 const GAME_RULES = generateLanguageRules();
-console.log("本次游戏的隐藏规则已生成:", GAME_RULES);
+console.log("游戏会话已启动，本次隐藏规则已生成:", GAME_RULES);
 
-// --- API端点 ---
+// --- API 路由 ---
+
+// 处理来自前端的聊天请求
 app.post('/chat', async (req, res) => {
     const { history } = req.body;
 
+    // 这是我们给AI设定的“角色”和“规则”
     const masterPrompt = `
 # **角色扮演指令：语言AI 'Kore'**
 
@@ -75,17 +77,21 @@ Kore:
         const text = response.text();
         res.json({ message: text });
     } catch (error) {
-        console.error(error);
+        console.error("调用Google AI时出错:", error);
         res.status(500).json({ message: "AI核心连接错误..." });
     }
 });
 
+// 处理根路径请求，发送前端页面
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-const PORT = 3000;
+// --- 启动服务器 ---
+
+// 2. 使用服务器分配的端口，如果未分配（例如在本地开发时），则使用3000
+const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-    console.log(`游戏服务器已启动，正在监听 http://localhost:${PORT}`);
-    console.log('现在，请在浏览器中打开 http://localhost:3000 来开始游戏');
+    console.log(`服务器已启动，正在监听端口 ${PORT}`);
 });
