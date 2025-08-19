@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>终端破译计划 (LLM + 引导版)</title>
+    <style>
+        body { font-family: 'Courier New', Courier, monospace; background-color: #0d1117; color: #c9d1d9; margin: 0; padding: 20px; display: flex; height: calc(100vh - 40px); font-size: 16px; }
+        .container { display: flex; width: 100%; height: 100%; gap: 20px; }
+        .panel { background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; }
+        .panel-title { padding: 10px; background-color: #30363d; font-weight: bold; border-bottom: 1px solid #30363d; }
+        .terminal { flex: 1; }
+        #objective-panel { padding: 10px 15px; background-color: #0d1117; color: #a5d6ff; border-bottom: 1px solid #30363d; font-style: italic;}
+        #objective-panel .label { font-weight: bold; color: #c9d1d9; }
+        #chat-log { flex-grow: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column-reverse; }
+        .message { margin-bottom: 15px; line-height: 1.5; white-space: pre-wrap; }
+        .ai-message .sender { color: #58a6ff; font-weight: bold; }
+        .player-message .sender { color: #1f6feb; font-weight: bold; }
+        .context-message { color: #8b949e; font-style: italic; border-left: 3px solid #484f58; padding-left: 10px; }
+        #input-area { display: flex; border-top: 1px solid #30363d; }
+        #player-input { flex-grow: 1; background-color: transparent; border: none; color: #c9d1d9; padding: 15px; font-family: inherit; font-size: inherit; }
+        #player-input:focus { outline: none; }
+        .notebook { flex: 1; }
+        #notebook-area { flex-grow: 1; width: 100%; height: 100%; box-sizing: border-box; background-color: #0d1117; border: none; color: #c9d1d9; padding: 15px; font-family: inherit; font-size: inherit; line-height: 1.6; }
+        #notebook-area:focus { outline: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="panel terminal">
+            <div class="panel-title">// TERMINAL</div>
+            <div id="objective-panel"><span class="label">当前任务 > </span><span id="objective-text">正在连接AI核心...</span></div>
+            <div id="chat-log"></div>
+            <div id="input-area">
+                <input type="text" id="player-input" placeholder="输入信息...">
+            </div>
+        </div>
+        <div class="panel notebook">
+            <div class="panel-title">// NOTEBOOK</div>
+            <textarea id="notebook-area" placeholder="在这里记录你的词汇、规则和猜想..."></textarea>
+        </div>
+    </div>
+
+    <script>
+        const chatLog = document.getElementById('chat-log');
+        const playerInput = document.getElementById('player-input');
+        const objectiveText = document.getElementById('objective-text');
+        
+        let conversationHistory = [];
+
+        function updateObjective(text) {
+             // 尝试从AI的回复中提取任务
+            const taskPrefix = "Task:";
+            const taskIndex = text.indexOf(taskPrefix);
+            if (taskIndex !== -1) {
+                objectiveText.textContent = text.substring(taskIndex + taskPrefix.length).trim();
+            }
+        }
+
+        function addMessage(sender, text) {
+            const messageDiv = document.createElement('div');
+            const senderClass = sender.toLowerCase();
+            messageDiv.classList.add('message', `${senderClass}-message`);
+            
+            const senderSpan = document.createElement('span');
+            senderSpan.classList.add('sender');
+            senderSpan.textContent = sender === 'AI' ? 'AI > ' : (sender === 'PLAYER' ? 'YOU > ' : 'CTX > ');
+            
+            const textNode = document.createTextNode(text);
+            messageDiv.appendChild(senderSpan);
+            messageDiv.appendChild(textNode);
+            chatLog.prepend(messageDiv);
+
+            if (sender === 'AI' || sender === 'PLAYER') {
+                 conversationHistory.push({ sender: sender === 'AI' ? 'Kore' : 'User', text: text });
+                 if (sender === 'AI') {
+                     updateObjective(text);
+                 }
+            }
+        }
+        
+        playerInput.addEventListener('keyup', async function(event) {
+            if (event.key === 'Enter') {
+                const playerText = playerInput.value;
+                if (playerText.trim() === '' || playerInput.disabled) return;
+
+                addMessage('PLAYER', playerText);
+                playerInput.value = 'AI正在思考...';
+                playerInput.disabled = true;
+
+                try {
+                    const response = await fetch('http://localhost:3000/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ history: conversationHistory })
+                    });
+                    if (!response.ok) throw new Error('网络或服务器错误');
+                    const data = await response.json();
+                    addMessage('AI', data.message);
+                } catch (error) {
+                    addMessage('AI', '连接中断... ' + error.message);
+                } finally {
+                    playerInput.value = '';
+                    playerInput.disabled = false;
+                    playerInput.focus();
+                }
+            }
+        });
+        
+        async function startGame() {
+            const initialResponse = await fetch('http://localhost:3000/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ history: [] }) // 发送空历史以获取第一条消息
+            });
+            const data = await initialResponse.json();
+            addMessage('AI', data.message);
+        }
+
+        startGame();
+    </script>
+</body>
+</html>
